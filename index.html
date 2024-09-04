@@ -1,0 +1,355 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Braille Input Viewport</title>
+    <style>
+        body {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            margin: 0;
+            background-color: #f0f0f0;
+            font-family: Arial, sans-serif;
+            transition: background-color 0.3s ease;
+        }
+        body.dark-mode {
+            background-color: #1a1a1a;
+        }
+        .container {
+            width: 80vw;
+            height: 80vh;
+            display: flex;
+            flex-direction: column;
+            background-color: white;
+            border: 1px solid #ccc;
+            box-shadow: 0 0 10px rgba(0,0,0,0.1);
+            transition: background-color 0.3s ease, border-color 0.3s ease, box-shadow 0.3s ease;
+            position: relative;
+        }
+        .dark-mode .container {
+            background-color: #2a2a2a;
+            border-color: #444;
+            box-shadow: 0 0 10px rgba(255,255,255,0.1);
+        }
+        #viewport {
+            flex-grow: 1;
+            padding: 20px;
+            font-family: monospace;
+            line-height: 1.5;
+            white-space: pre-wrap;
+            word-wrap: break-word;
+            overflow-y: auto;
+            overflow-x: hidden;
+            color: #333;
+            transition: color 0.3s ease, box-shadow 0.3s ease;
+            outline: none;
+        }
+        .dark-mode #viewport {
+            color: #e0e0e0;
+        }
+        #viewport:focus {
+            box-shadow: inset 0 0 0 1px rgba(0, 123, 255, 0.2);
+        }
+        .dark-mode #viewport:focus {
+            box-shadow: inset 0 0 0 1px rgba(77, 166, 255, 0.2);
+        }
+        #statusBar {
+            display: flex;
+            justify-content: flex-end;
+            align-items: center;
+            padding: 5px 10px;
+            background-color: #f8f9fa;
+            border-top: 1px solid #dee2e6;
+            font-size: 14px;
+            color: #495057;
+            transition: background-color 0.3s ease, border-color 0.3s ease, color 0.3s ease;
+            position: relative;
+            z-index: 10;
+        }
+        .dark-mode #statusBar {
+            background-color: #3a3a3a;
+            border-color: #555;
+            color: #b0b0b0;
+        }
+        .controls {
+            display: flex;
+            gap: 5px;
+        }
+        .control-button {
+            background-color: transparent;
+            color: #495057;
+            border: 1px solid #adb5bd;
+            padding: 2px 6px;
+            cursor: pointer;
+            font-size: 14px;
+            transition: all 0.2s ease;
+            border-radius: 3px;
+        }
+        .dark-mode .control-button {
+            color: #b0b0b0;
+            border-color: #666;
+        }
+        .control-button:hover {
+            background-color: #e9ecef;
+            color: #212529;
+        }
+        .dark-mode .control-button:hover {
+            background-color: #4a4a4a;
+            color: #ffffff;
+        }
+        #darkModeToggle {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            width: 30px;
+            height: 26px;
+            padding: 0;
+        }
+        #darkModeToggle svg {
+            width: 18px;
+            height: 18px;
+        }
+        .size-controls {
+            display: flex;
+            gap: 1px;
+        }
+        .size-button {
+            border-radius: 0;
+        }
+        .size-button:first-child {
+            border-top-left-radius: 3px;
+            border-bottom-left-radius: 3px;
+        }
+        .size-button:last-child {
+            border-top-right-radius: 3px;
+            border-bottom-right-radius: 3px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div id="viewport" contenteditable="true"></div>
+        <div id="statusBar">
+            <div class="controls">
+                <button id="importButton" class="control-button" aria-label="Import Unicode">Import</button>
+                <button id="exportButton" class="control-button" aria-label="Export Unicode">Export</button>
+                <button id="darkModeToggle" class="control-button" aria-label="Toggle Dark Mode">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path>
+                    </svg>
+                </button>
+                <div class="size-controls">
+                    <button class="control-button size-button" id="decreaseSize">-</button>
+                    <button class="control-button size-button" id="increaseSize">+</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // JavaScript remains unchanged
+        const viewport = document.getElementById('viewport');
+        const decreaseSizeBtn = document.getElementById('decreaseSize');
+        const increaseSizeBtn = document.getElementById('increaseSize');
+        const darkModeToggle = document.getElementById('darkModeToggle');
+        const darkModeIcon = darkModeToggle.querySelector('svg');
+        const importButton = document.getElementById('importButton');
+        const exportButton = document.getElementById('exportButton');
+        let currentChar = 0x2800;  // Start with empty braille character
+        let keysPressed = new Set();
+        let fontSize = 24;
+
+        const brailleMap = {
+            'f': 0x01, 'd': 0x02, 's': 0x04, 
+            'j': 0x08, 'k': 0x10, 'l': 0x20
+        };
+
+        function commitCharacter() {
+            if (currentChar !== 0x2800) {  // Only commit if the character is not empty
+                const selection = window.getSelection();
+                const range = selection.getRangeAt(0);
+                const newChar = document.createTextNode(String.fromCharCode(currentChar));
+                range.deleteContents();
+                range.insertNode(newChar);
+                range.setStartAfter(newChar);
+                range.setEndAfter(newChar);
+                selection.removeAllRanges();
+                selection.addRange(range);
+            }
+            currentChar = 0x2800;  // Reset to empty braille character
+            keysPressed.clear();
+            scrollToBottom();
+        }
+
+        function scrollToBottom() {
+            viewport.scrollTop = viewport.scrollHeight;
+        }
+
+        function changeFontSize(delta) {
+            fontSize += delta;
+            fontSize = Math.max(12, Math.min(72, fontSize));  // Limit font size between 12 and 72
+            viewport.style.fontSize = `${fontSize}px`;
+        }
+
+        function moveCursor(direction) {
+            const selection = window.getSelection();
+            const range = selection.getRangeAt(0);
+            
+            switch (direction) {
+                case 'left':
+                    if (range.startOffset > 0) {
+                        range.setStart(range.startContainer, range.startOffset - 1);
+                        range.collapse(true);
+                    } else if (range.startContainer.previousSibling) {
+                        range.setStartBefore(range.startContainer);
+                        range.collapse(true);
+                    }
+                    break;
+                case 'right':
+                    if (range.startOffset < range.startContainer.length) {
+                        range.setStart(range.startContainer, range.startOffset + 1);
+                        range.collapse(true);
+                    } else if (range.startContainer.nextSibling) {
+                        range.setStartAfter(range.startContainer);
+                        range.collapse(true);
+                    }
+                    break;
+                case 'up':
+                case 'down':
+                    const currentRect = range.getBoundingClientRect();
+                    const viewportRect = viewport.getBoundingClientRect();
+                    const x = currentRect.left - viewportRect.left;
+                    let y;
+                    if (direction === 'up') {
+                        y = currentRect.top - viewportRect.top - 1;
+                    } else {
+                        y = currentRect.bottom - viewportRect.top + 1;
+                    }
+                    const newPosition = document.caretPositionFromPoint(x, y);
+                    if (newPosition && viewport.contains(newPosition.offsetNode)) {
+                        range.setStart(newPosition.offsetNode, newPosition.offset);
+                        range.collapse(true);
+                    }
+                    break;
+            }
+
+            // Ensure the cursor stays within the viewport
+            if (!viewport.contains(range.startContainer)) {
+                range.setStart(viewport, viewport.childNodes.length);
+                range.collapse(true);
+            }
+
+            selection.removeAllRanges();
+            selection.addRange(range);
+        }
+
+        function toggleDarkMode() {
+            document.body.classList.toggle('dark-mode');
+            updateDarkModeIcon();
+        }
+
+        function updateDarkModeIcon() {
+            if (document.body.classList.contains('dark-mode')) {
+                darkModeIcon.innerHTML = '<circle cx="12" cy="12" r="5"></circle><line x1="12" y1="1" x2="12" y2="3"></line><line x1="12" y1="21" x2="12" y2="23"></line><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line><line x1="1" y1="12" x2="3" y2="12"></line><line x1="21" y1="12" x2="23" y2="12"></line><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line>';
+            } else {
+                darkModeIcon.innerHTML = '<path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path>';
+            }
+        }
+
+        function importUnicode() {
+            const input = document.createElement('input');
+            input.type = 'file';
+            input.accept = '.txt';
+            input.onchange = e => {
+                const file = e.target.files[0];
+                const reader = new FileReader();
+                reader.onload = function(event) {
+                    viewport.textContent = event.target.result;
+                };
+                reader.readAsText(file);
+            };
+            input.click();
+        }
+
+        function exportUnicode() {
+            const content = viewport.textContent;
+            const blob = new Blob([content], { type: 'text/plain' });
+            const a = document.createElement('a');
+            a.href = URL.createObjectURL(blob);
+            a.download = 'braille_content.txt';
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+        }
+
+        viewport.addEventListener('keydown', (e) => {
+            const key = e.key.toLowerCase();
+            if (key in brailleMap && !keysPressed.has(key)) {
+                e.preventDefault();
+                currentChar |= brailleMap[key];  // Set the dot
+                keysPressed.add(key);
+            } else if (key === 'enter') {
+                e.preventDefault();
+                commitCharacter();
+                document.execCommand('insertLineBreak');
+                scrollToBottom();
+            } else if (key === 'backspace') {
+                if (currentChar === 0x2800) {
+                    // Let the default backspace behavior happen
+                } else {
+                    e.preventDefault();
+                    currentChar = 0x2800;
+                    keysPressed.clear();
+                }
+            } else if (key === ' ') {
+                e.preventDefault();
+                commitCharacter();
+                document.execCommand('insertText', false, ' ');
+                scrollToBottom();
+            } else if (e.ctrlKey && (key === '=' || key === '-')) {
+                e.preventDefault();
+                changeFontSize(key === '=' ? 2 : -2);
+            } else if (['arrowleft', 'arrowright', 'arrowup', 'arrowdown'].includes(key)) {
+                e.preventDefault();
+                moveCursor(key.replace('arrow', ''));
+            } else {
+                e.preventDefault();
+            }
+        });
+
+        viewport.addEventListener('keyup', (e) => {
+            const key = e.key.toLowerCase();
+            if (key in brailleMap) {
+                e.preventDefault();
+                commitCharacter();
+            }
+        });
+
+        // Prevent paste events
+        viewport.addEventListener('paste', (e) => {
+            e.preventDefault();
+        });
+
+        // Size adjustment buttons
+        decreaseSizeBtn.addEventListener('click', () => changeFontSize(-2));
+        increaseSizeBtn.addEventListener('click', () => changeFontSize(2));
+
+        // Dark mode toggle
+        darkModeToggle.addEventListener('click', toggleDarkMode);
+
+        // Import and Export buttons
+        importButton.addEventListener('click', importUnicode);
+        exportButton.addEventListener('click', exportUnicode);
+
+        // Set initial font size and focus
+        viewport.style.fontSize = `${fontSize}px`;
+        viewport.focus();
+
+        // Initialize dark mode icon
+        updateDarkModeIcon();
+    </script>
+</body>
+</html>
